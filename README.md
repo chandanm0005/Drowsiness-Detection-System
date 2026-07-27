@@ -1,298 +1,521 @@
 # Drowsiness Detection System
 
-A real-time, browser-based drowsiness detection web application powered by TensorFlow.js and Google's MediaPipe FaceMesh. Detects eye closure using the Eye Aspect Ratio (EAR) algorithm and triggers an audio alarm when a user's eyes remain closed for 5 or more seconds — entirely on-device, with zero data leaving the browser.
-
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Visit%20App-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://your-deployment-url.onrender.com)
-
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![TensorFlow.js](https://img.shields.io/badge/TensorFlow.js-4.22-FF6F00?logo=tensorflow&logoColor=white)](https://www.tensorflow.org/js)
-[![Express](https://img.shields.io/badge/Express-5.0-000000?logo=express&logoColor=white)](https://expressjs.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=white)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![TensorFlow.js](https://img.shields.io/badge/TensorFlow.js-4.22-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white)](https://www.tensorflow.org/js)
+[![Express](https://img.shields.io/badge/Express-5.0-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
 
 ---
 
-## What it does
+## 1. Overview
 
-The system continuously analyzes a webcam feed frame-by-frame. For each frame, it:
+### What the project does
+A real-time, browser-based drowsiness detection web application that monitors a user's eyes via webcam and triggers an audio alarm when their eyes remain closed for 5 or more continuous seconds. All computer vision inference runs entirely on-device — no video data ever leaves the browser.
 
-1. Runs the MediaPipe FaceMesh model to detect **478 3D facial landmarks**
-2. Isolates the 6 landmark points that describe each eye
-3. Computes the **Eye Aspect Ratio (EAR)** from those points
-4. If EAR drops below `0.21` (eyes closed) for **5 continuous seconds**, it triggers a multi-beep audio alarm via the Web Audio API
+### Problem it solves
+Driver fatigue and microsleeps are responsible for a significant share of road accidents globally. Existing solutions require specialized hardware or dedicated apps. This system works on any device with a browser and a webcam — no installation, no hardware, no data sent to any server.
 
-All inference runs locally on the GPU through TensorFlow.js's WebGL backend — the camera stream never reaches any server.
+### Key Features
+- Real-time eye tracking at up to 30 FPS using MediaPipe FaceMesh (478 3D facial landmarks)
+- Eye Aspect Ratio (EAR) algorithm to measure eye openness scientifically
+- Audio alarm via Web Audio API — 3 beeps at 1kHz when eyes are closed for 5+ seconds
+- Haptic vibration on mobile devices (`navigator.vibrate`)
+- Canvas overlay rendering EAR value, eye outlines, and status in real time
+- Fallback brightness-based detector with zero model download time
+- User authentication — local email/password + Google OAuth2
+- Resume Builder and Resume Screener as additional features
+
+### Tech Stack
+React 19 · TypeScript 5.6 · TensorFlow.js 4.22 · MediaPipe FaceMesh · Vite 7 · TailwindCSS v4 · Express 5 · Passport.js · Drizzle ORM · PostgreSQL · Render.com
 
 ---
 
-## The Core Algorithm: Eye Aspect Ratio (EAR)
+## 2. Demo
 
-EAR is a single scalar value that captures how open or closed an eye is. It was introduced by Soukupová and Čech in their 2016 paper *"Real-Time Eye Blink Detection using Facial Landmarks"*.
+**Live Application:** [your-deployment-url.onrender.com](https://your-deployment-url.onrender.com)
+
+> Replace the URL above once deployed. Navigate to `/drowsiness` to use the detector.
+
+### How to test it
+1. Open the live URL and go to `/drowsiness`
+2. Click **Start Detection** and allow camera access
+3. Keep your eyes open — status shows `EYES OPEN` in green
+4. Close your eyes for 5 seconds — the alarm triggers with 3 beeps
+
+### API Endpoints
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/auth/me` | Get current authenticated user |
+| `POST` | `/api/auth/register` | Register with email + password |
+| `POST` | `/api/auth/login` | Login with email + password |
+| `POST` | `/api/auth/logout` | Logout and destroy session |
+| `GET` | `/api/auth/google` | Initiate Google OAuth2 flow |
+| `GET` | `/api/auth/google/callback` | Google OAuth2 callback |
+| `GET` | `/api/health` | Server health check |
+| `GET` | `/api/ready` | Readiness check (storage dependency) |
+
+---
+
+## 3. Architecture
+
+### High-Level Diagram
+
+```mermaid
+flowchart TD
+    A[📹 Webcam Feed — getUserMedia 640x480] --> B[HTML5 Video Element]
+    B --> C[TensorFlow.js WebGL Backend — GPU Inference]
+    C --> D[MediaPipe FaceMesh — 478 3D Landmarks]
+    D --> E[Extract 6 Eye Keypoints per Eye]
+    E --> F[Compute Eye Aspect Ratio — EAR]
+
+    F --> G{avgEAR < 0.21?}
+    G -- No --> H[🟢 Eyes Open — Reset Timer]
+    G -- Yes --> I[⏱️ Increment Closed Duration]
+
+    I --> J{Duration >= 5s?}
+    J -- No --> K[🟡 Warning State]
+    J -- Yes --> L[🚨 Trigger Alarm]
+
+    L --> M[🔊 Web Audio API — 3x 1kHz Beeps]
+    L --> N[📳 navigator.vibrate — Haptic]
+    L --> O[🔴 Visual Alert Overlay on Canvas]
+```
+
+### Component Breakdown
+
+| Component | Responsibility |
+|-----------|---------------|
+| `DrowsinessDetector.tsx` | Core detection — loads TF model, runs rAF loop, computes EAR, triggers alarm |
+| `SimpleDrowsinessDetector.tsx` | Fallback detector using pixel brightness sampling — no model download |
+| `server/routes.ts` | All auth API routes — local + Google OAuth2 via Passport.js |
+| `server/storage.ts` | In-memory user store (swappable to PostgreSQL via Drizzle ORM) |
+| `shared/schema.ts` | Drizzle + Zod user schema shared between client and server |
+| `script/build.ts` | Custom build — Vite for client, esbuild for server bundle |
+
+### Request Flow
 
 ```
+User opens /drowsiness
+    → React Router (Wouter) renders DrowsinessDetector
+    → tf.ready() initialises TensorFlow.js WebGL backend
+    → faceLandmarksDetection.createDetector() loads MediaPipe model
+    → navigator.mediaDevices.getUserMedia() opens webcam
+    → requestAnimationFrame loop starts
+        → estimateFaces(video) runs on every frame
+        → 6 keypoints extracted per eye
+        → EAR computed via Math.hypot (Euclidean distance)
+        → if avgEAR < 0.21 for 5s → playAlarm() via Web Audio API
+```
+
+---
+
+## 4. Tech Stack
+
+| Layer | Technology | Why |
+|-------|------------|-----|
+| Frontend | React 19 | Component-based UI, concurrent rendering |
+| Language | TypeScript 5.6 | Type safety across client + server |
+| Build Tool | Vite 7 | HMR in dev, optimised production bundle |
+| ML Engine | TensorFlow.js 4.22 | GPU-accelerated inference via WebGL — no Python, no server |
+| CV Model | MediaPipe FaceMesh | 478 3D landmarks, proven accuracy on face geometry |
+| Styling | TailwindCSS v4 | Utility-first, no CSS bloat |
+| UI Components | Radix UI + shadcn/ui | Accessible, unstyled primitives |
+| Routing | Wouter | 1.5KB router — no React Router overhead |
+| Server State | TanStack Query v5 | Caching, background refetch, loading states |
+| Backend | Express 5 | Lightweight REST API + static file serving |
+| Auth | Passport.js | Strategy pattern — pluggable local + OAuth2 |
+| Password Hash | Node.js `crypto.scrypt` | Memory-hard, timing-safe — better than bcrypt for this stack |
+| Session | express-session + memorystore | Server-side sessions, no JWT complexity |
+| ORM | Drizzle ORM + Zod | Type-safe queries, schema-first validation |
+| Database | PostgreSQL | Relational, reliable user persistence |
+| Deployment | Render.com | `render.yaml` config, zero-click deploys from GitHub |
+
+---
+
+## 5. Project Structure
+
+```
+drowsiness-detection-system/
+│
+├── client/                          # Frontend React SPA
+│   ├── index.html                   # HTML entry point
+│   ├── public/                      # Static assets (favicon, template images)
+│   └── src/
+│       ├── App.tsx                  # Root component — router + providers setup
+│       ├── main.tsx                 # React DOM entry point
+│       ├── index.css                # Global styles + Tailwind base
+│       │
+│       ├── components/
+│       │   ├── DrowsinessDetector.tsx        # PRIMARY: TF.js + EAR algorithm
+│       │   ├── SimpleDrowsinessDetector.tsx  # FALLBACK: brightness-based detection
+│       │   ├── layout/Navbar.tsx             # Navigation header
+│       │   └── ui/                           # ~50 shadcn/ui component primitives
+│       │
+│       ├── pages/
+│       │   ├── Home.tsx                      # Landing page
+│       │   ├── login.tsx                     # Login + registration page
+│       │   ├── drowsiness/index.tsx          # Mounts DrowsinessDetector
+│       │   ├── builder/index.tsx             # Resume builder feature
+│       │   └── screener/index.tsx            # Resume screener feature
+│       │
+│       ├── hooks/
+│       │   ├── use-mobile.tsx                # Responsive breakpoint hook
+│       │   └── use-toast.ts                  # Toast notification hook
+│       │
+│       └── lib/
+│           ├── auth.ts                       # Auth API calls
+│           ├── queryClient.ts                # TanStack Query client config
+│           └── utils.ts                      # cn() utility (clsx + tailwind-merge)
+│
+├── server/                          # Node.js + Express backend
+│   ├── index.ts                     # Server entry — port binding + middleware
+│   ├── routes.ts                    # All API routes + auth strategies
+│   ├── storage.ts                   # IStorage interface + MemStorage implementation
+│   ├── static.ts                    # Serves built client in production
+│   └── vite.ts                      # Vite dev middleware (dev only)
+│
+├── shared/                          # Shared between client and server
+│   └── schema.ts                    # Drizzle table definitions + Zod insert schemas
+│
+├── script/
+│   └── build.ts                     # Build script: Vite (client) + esbuild (server)
+│
+├── .env.example                     # Environment variable template
+├── render.yaml                      # Render.com deployment configuration
+├── components.json                  # shadcn/ui registry config
+├── drizzle.config.ts                # Drizzle ORM + migration config
+├── vite.config.ts                   # Vite config — aliases, plugins, proxy
+├── tsconfig.json                    # TypeScript project config
+└── package.json                     # Dependencies + npm scripts
+```
+
+---
+
+## 6. Database Design
+
+### Users Table
+
+```sql
+CREATE TABLE users (
+  id       VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+  username TEXT NOT NULL UNIQUE,   -- stores email address
+  password TEXT NOT NULL           -- scrypt hash: "salt:derivedKey"
+);
+```
+
+### ER Diagram
+
+```
+┌──────────────────────────┐
+│          users           │
+├──────────────────────────┤
+│ id       VARCHAR  (PK)   │
+│ username TEXT     UNIQUE │
+│ password TEXT            │
+└──────────────────────────┘
+```
+
+### Notes
+- `id` is a UUID generated by PostgreSQL's `gen_random_uuid()` — no sequential IDs exposed
+- `username` stores the email address (unique constraint prevents duplicate accounts)
+- `password` is stored as `salt:derivedKey` — the salt is a random 16-byte hex string, the derived key is 64 bytes via `scryptSync`
+- The schema is defined in `shared/schema.ts` using Drizzle ORM with `drizzle-zod` for automatic Zod validation schemas
+
+---
+
+## 7. API Overview
+
+### Authentication
+All auth routes use session cookies (`connect.sid`). The session is HTTP-only, SameSite=lax, and Secure in production.
+
+### Endpoints
+
+**Register**
+```http
+POST /api/auth/register
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "mypassword123",
+  "displayName": "Chandan"
+}
+```
+```json
+{ "ok": true, "user": { "id": "uuid", "displayName": "Chandan", "email": "user@example.com" } }
+```
+
+**Login**
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "mypassword123"
+}
+```
+```json
+{ "ok": true, "user": { "id": "uuid", "displayName": "user", "email": "user@example.com" } }
+```
+
+**Get current user**
+```http
+GET /api/auth/me
+```
+```json
+{ "authenticated": true, "user": { "id": "uuid", "displayName": "Chandan", "email": "user@example.com" } }
+```
+
+**Health check**
+```http
+GET /api/health
+```
+```json
+{ "status": "ok", "uptimeSec": 120, "timestamp": "2025-01-01T00:00:00.000Z" }
+```
+
+---
+
+## 8. Key Features
+
+### Real-Time Eye Tracking
+MediaPipe FaceMesh detects 478 3D facial landmarks per frame. The system reads 12 of them (6 per eye) on every animation frame and feeds them into the EAR algorithm.
+
+### Eye Aspect Ratio (EAR) Algorithm
+Based on the Soukupová & Čech 2016 paper. Uses Euclidean distances between eye landmark coordinates:
+
+```
+EAR = ( ||p2 - p6|| + ||p3 - p5|| ) / ( 2 × ||p1 - p4|| )
+
         p2    p3
          •----•
 p1 •              • p4
          •----•
         p6    p5
+
+Eyes OPEN  → EAR ≈ 0.28–0.35
+Eyes CLOSED → EAR ≤ 0.21
 ```
 
-**Formula:**
+### Drowsiness Alert System
+- EAR is checked every frame against threshold `0.21`
+- A `useRef` timestamp tracks when eyes first closed
+- After **5 continuous seconds** below threshold → alarm fires once (`hasAlertedRef` prevents repeat)
+- Eyes reopening resets the entire timer and alert state
 
+### Audio Alarm
+Generated via Web Audio API — no audio files:
+```ts
+oscillator.frequency.value = 1000; // 1kHz
+oscillator.type = 'sine';
+// 3 beeps × 300ms each, 400ms apart
 ```
-EAR = ( ||p2 - p6|| + ||p3 - p5|| ) / ( 2 × ||p1 - p4|| )
-```
 
-- The numerator sums the two vertical distances across the eye
-- The denominator is twice the horizontal width of the eye
-- When eyes are **open**: EAR ≈ 0.28–0.35
-- When eyes are **closed**: EAR drops to ≤ 0.21 (threshold used in this project)
-- The ratio is computed for both eyes independently; the average is used for the final decision
+### Authentication
+- Local email + password (scrypt hashing)
+- Google OAuth2 (Passport.js strategy)
+- Session-based (no JWT)
 
-In code, Euclidean distance is calculated with `Math.hypot(dx, dy)`, which gives `sqrt(dx² + dy²)`.
+### Fallback Detector
+`SimpleDrowsinessDetector` uses pixel brightness sampling on approximate eye regions. Starts instantly (no model download). Less accurate but useful on slow connections.
 
-**Why EAR and not just pixel brightness?**  
-EAR is scale-invariant and works regardless of face size in the frame. Brightness-based methods are sensitive to lighting conditions. EAR also handles partial blinks gracefully since the ratio changes smoothly.
+### Canvas Overlay
+Draws all 478 face landmarks as green dots, highlights the 12 eye points, draws eye outlines in red (closed) or green (open), and shows live EAR values as text.
 
 ---
 
-## MediaPipe FaceMesh — the landmark indices
+## 9. Security
 
-MediaPipe's FaceMesh model produces **478 3D keypoints** per face. This project uses only 12 of them — 6 per eye:
-
-| Eye       | Landmark Indices            |
-|-----------|-----------------------------|
-| Left eye  | 33, 160, 158, 133, 153, 144 |
-| Right eye | 362, 385, 387, 263, 373, 380 |
-
-These indices follow the standard MediaPipe topology and map to the corners and eyelid edges of each eye.
-
-The model is loaded using `@tensorflow-models/face-landmarks-detection`:
+### Password Hashing
+`crypto.scryptSync` with a 16-byte random salt per user. Output: `"salt:derivedKey"` stored as one string. Verification uses `timingSafeEqual` to prevent timing attacks.
 
 ```ts
-const model = faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh;
-const detector = await faceLandmarksDetection.createDetector(model, {
-  runtime: 'tfjs',       // uses TensorFlow.js (browser)
-  maxFaces: 1,           // only track one face for performance
-  refineLandmarks: false // faster; full refinement not needed for EAR
-});
-```
-
----
-
-## Detection Loop
-
-The detection runs inside a `requestAnimationFrame` loop — the browser's native mechanism for smooth, 60fps rendering. On each frame:
-
-```ts
-const faces = await detector.estimateFaces(videoElement);
-const keypoints = faces[0].keypoints;
-
-// Extract 6 points per eye, compute EAR
-const leftEAR  = calculateEAR(leftEyePoints);
-const rightEAR = calculateEAR(rightEyePoints);
-const avgEAR   = (leftEAR + rightEAR) / 2;
-
-if (avgEAR < 0.21) {
-  // track closed duration
-} else {
-  // reset timer
+function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString('hex');
+  const hash = scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
 }
 ```
 
-The closed-eye timer uses `Date.now()` timestamps stored in a `useRef` — not React state — to avoid re-render overhead during the high-frequency loop. The alarm fires exactly once per closure event (guarded by `hasAlertedRef`).
+### Session Security
+- `httpOnly: true` — inaccessible to JavaScript
+- `sameSite: 'lax'` — CSRF protection
+- `secure: true` in production — HTTPS only
+- 7-day expiry with memorystore TTL
+
+### Google OAuth2
+- Client ID and Secret stored in environment variables only
+- Callback URL validated server-side
+- State parameter used to prevent CSRF in OAuth flow
+
+### Input Validation
+- Zod schemas validate all incoming request bodies
+- Email and password presence checked before any DB query
+- Duplicate email check returns 409 before attempting insert
+
+### Privacy
+All webcam processing is 100% on-device. TensorFlow.js runs inference on the local GPU via WebGL. The video stream never leaves the browser — there is no backend API for the detection feature.
 
 ---
 
-## Audio Alarm
+## 10. Performance & Scalability
 
-The alarm is generated entirely in the browser using the **Web Audio API** — no audio files needed:
+### requestAnimationFrame Loop
+`rAF` syncs with the display refresh rate (~60fps) and automatically pauses when the tab is backgrounded — unlike `setInterval` which keeps running. This saves significant CPU/GPU when the user switches tabs.
 
+### useRef over useState in Detection Loop
+Timer values and state flags inside the rAF loop are stored in `useRef`, not `useState`. Setting state on every frame would cause React to re-render 60 times per second — refs avoid this entirely while remaining accessible inside closures.
+
+### Model Configuration
 ```ts
-const oscillator = ctx.createOscillator();
-oscillator.frequency.value = 1000;  // 1kHz sine wave
-oscillator.type = 'sine';
-// plays 3 beeps, 400ms apart
+{
+  maxFaces: 1,           // only process one face — halves work vs. multi-face
+  refineLandmarks: false // disables iris refinement — not needed for EAR
+}
 ```
 
-A `GainNode` is used to ramp the volume down smoothly (`exponentialRampToValueAtTime`) to avoid an abrupt cut. Mobile devices also receive a `navigator.vibrate([500, 100, 500])` haptic pattern.
+### TensorFlow.js WebGL Backend
+Inference runs on the GPU (not CPU). WebGL shaders parallelize the matrix operations of the FaceMesh model, making ~30 FPS achievable in-browser.
+
+### Build Optimisation
+- Vite produces a tree-shaken, code-split production bundle
+- esbuild compiles the server to a single `.cjs` bundle for fast cold start
+- `package-lock.json` ensures reproducible installs
+
+### Scaling the Backend
+The Express server is stateless per request — sessions are stored in memorystore (swap to Redis for multi-instance). To scale horizontally: switch `memorystore` → `connect-redis`, add a load balancer, deploy multiple instances on Render or a container platform.
 
 ---
 
-## Architecture
-
-```
-Browser (Client)                         Node.js Server
-─────────────────────────────────────    ──────────────────────────
-React + Vite SPA                         Express 5
-│                                        │
-├── /drowsiness ──→ DrowsinessDetector   ├── /api/auth/login
-│     │                                  ├── /api/auth/register
-│     ├── tf.ready()                     ├── /api/auth/google (OAuth2)
-│     ├── createDetector (MediaPipe)     ├── /api/auth/me
-│     ├── getUserMedia (webcam)          └── /api/health
-│     └── rAF detection loop
-│
-├── /builder  ──→ Resume Builder
-└── /screener ──→ Resume Screener
-```
-
-The server's only job is authentication and serving the static SPA in production. All the CV (computer vision) logic lives entirely in the browser.
-
----
-
-## Tech Stack
-
-| Layer | Technology | Purpose |
-|---|---|---|
-| UI Framework | React 19 | Component architecture |
-| Language | TypeScript 5.6 | Type-safe development |
-| Build Tool | Vite 7 | Dev server + HMR + production bundling |
-| ML Engine | TensorFlow.js 4.22 | GPU-accelerated in-browser inference via WebGL |
-| CV Model | MediaPipe FaceMesh | 478-landmark 3D face mesh |
-| Styling | TailwindCSS v4 | Utility-first CSS |
-| UI Components | Radix UI + shadcn/ui | Accessible component primitives |
-| Routing | Wouter | Lightweight client-side router |
-| State / Data | TanStack Query v5 | Server state management |
-| Backend | Express 5 | REST API + static file serving |
-| Auth | Passport.js | Local + Google OAuth2 strategies |
-| Password Hashing | Node.js `crypto.scrypt` | Timing-safe password verification |
-| Session | express-session + memorystore | Server-side session management |
-| ORM | Drizzle ORM + Zod | Schema definition + validation |
-| Database | PostgreSQL (or in-memory) | User persistence |
-| Deployment | Render.com (`render.yaml`) | Cloud web service |
-
----
-
-## Project Structure
-
-```
-drowsiness-detection-system/
-├── client/
-│   ├── index.html
-│   └── src/
-│       ├── App.tsx                              # Router + providers
-│       ├── components/
-│       │   ├── DrowsinessDetector.tsx           # Primary: TensorFlow.js + EAR
-│       │   ├── SimpleDrowsinessDetector.tsx     # Fallback: brightness-based
-│       │   ├── layout/Navbar.tsx
-│       │   └── ui/                              # shadcn/ui primitives
-│       ├── pages/
-│       │   ├── Home.tsx
-│       │   ├── login.tsx
-│       │   ├── drowsiness/index.tsx             # Drowsiness detection page
-│       │   ├── builder/index.tsx                # Resume builder
-│       │   └── screener/index.tsx               # Resume screener
-│       ├── hooks/
-│       └── lib/
-├── server/
-│   ├── index.ts                                 # Server entry + port binding
-│   ├── routes.ts                                # Auth API routes
-│   ├── storage.ts                               # In-memory user store
-│   ├── static.ts                                # Production static serving
-│   └── vite.ts                                  # Vite dev middleware
-├── shared/
-│   └── schema.ts                                # Drizzle/Zod user schema
-├── script/
-│   └── build.ts                                 # esbuild + Vite build script
-├── .env.example                                 # Environment variable template
-├── render.yaml                                  # Render deployment config
-├── package.json
-├── tsconfig.json
-└── vite.config.ts
-```
-
----
-
-## Fallback Detector
-
-`SimpleDrowsinessDetector.tsx` provides an instant-start alternative with no model download. It samples pixel brightness in the approximate eye regions of the frame (~25–40% width, ~40–48% height) and treats average brightness below `100` as eyes closed.
-
-Trade-off: fast startup but accuracy is affected by lighting. The EAR-based detector is significantly more robust.
-
----
-
-## Authentication
-
-The backend uses Passport.js with two strategies:
-
-- **Local strategy**: email + password. Passwords are hashed with `crypto.scryptSync` (salt + derived key, 64 bytes). Verification uses `timingSafeEqual` to prevent timing attacks.
-- **Google OAuth2**: configured via `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`. Requires a Google Cloud Console project with the OAuth2 callback URL set.
-
-Sessions are managed with `express-session` backed by `memorystore`. In production, swap to `connect-pg-simple` with PostgreSQL for persistence.
-
----
-
-## Getting Started
+## 11. Installation
 
 ### Prerequisites
-
 - Node.js v20+
 - npm v10+
-- A webcam
+- A webcam (built-in laptop camera works)
 
-### Run locally
+### Clone and Run
 
 ```bash
 git clone https://github.com/chandanm0005/Drowsiness-Detection-System.git
 cd Drowsiness-Detection-System
-
 npm install
 npm run dev
 ```
 
-Open [http://localhost:5030/drowsiness](http://localhost:5030/drowsiness), allow camera access, and click **Start Detection**.
+App starts on **http://localhost:5030**
+
+Navigate to **http://localhost:5030/drowsiness** to use the detector.
 
 ### Environment Variables
 
-Copy `.env.example` to `.env` and fill in:
+Copy `.env.example` to `.env`:
 
+```bash
+cp .env.example .env
 ```
-GOOGLE_CLIENT_ID=your-google-client-id
+
+Fill in:
+
+```env
+# Required for session encryption
+SESSION_SECRET=replace-with-a-long-random-string
+
+# Optional — only needed for Google OAuth login
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-google-client-secret
-SESSION_SECRET=a-long-random-string
 ```
 
-Google OAuth is optional — the app works without it (local auth and the detection feature are always available).
+Google OAuth is fully optional. Local auth and the drowsiness detection feature work without it.
+
+### Available Scripts
+
+```bash
+npm run dev      # Start development server (client + server with HMR)
+npm run build    # Production build (Vite client + esbuild server)
+npm run start    # Start production server
+npm run check    # TypeScript type check
+npm run db:push  # Push Drizzle schema to PostgreSQL
+```
 
 ---
 
-## Deployment (Render)
+## 12. Deployment
 
-The included `render.yaml` configures a Render Web Service:
+### Render.com (Recommended)
+
+The repo includes `render.yaml` for one-click deployment:
 
 ```yaml
-buildCommand: npm install && npm run build
-startCommand:  npm run start
+services:
+  - type: web
+    name: drowsiness-detection-system
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
 ```
 
-Push to GitHub, connect the repo on [render.com](https://render.com), and deploy.
+Steps:
+1. Push to GitHub
+2. Go to [render.com](https://render.com) → **New Web Service**
+3. Connect `chandanm0005/Drowsiness-Detection-System`
+4. Render reads `render.yaml` automatically
+5. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the dashboard if using Google OAuth
+6. Click **Deploy**
+
+### Environment Variables on Render
+Set these in the Render dashboard under **Environment**:
+- `SESSION_SECRET` — auto-generated by `render.yaml`
+- `GOOGLE_CLIENT_ID` — optional
+- `GOOGLE_CLIENT_SECRET` — optional
+- `DATABASE_URL` — optional, only if using PostgreSQL instead of in-memory store
 
 ---
 
-## Key Design Decisions
+## 13. Future Improvements
 
-**Why run inference in the browser?**  
-Privacy. Sending a live webcam stream to a server is a significant privacy risk. Running TensorFlow.js with the WebGL backend means inference happens on the local GPU — no video data ever leaves the device.
-
-**Why `requestAnimationFrame` instead of `setInterval`?**  
-`rAF` is synchronized with the display refresh rate and pauses automatically when the tab is backgrounded, saving CPU/GPU. `setInterval` would keep running even when the user switches tabs.
-
-**Why `useRef` for timing instead of `useState`?**  
-Setting state inside a high-frequency `rAF` loop would trigger React re-renders on every frame, causing unnecessary work. Refs are mutable, don't cause re-renders, and are always current inside closures.
-
-**Why EAR threshold 0.21?**  
-The original Soukupová & Čech paper recommends 0.3 as a general threshold, but that produces false positives for natural blinks. 0.21 is a conservative value suited for detecting sustained closure (drowsiness) rather than normal blinks.
-
-**Why 5 seconds?**  
-A normal blink lasts 150–400ms. A microsleep (the dangerous precursor to driver fatigue accidents) typically starts at 2–5 seconds. 5 seconds is a safe threshold that avoids false alarms from slow blinks.
+- **PERCLOS metric** — Percentage of Eye Closure over time (more accurate than single-threshold EAR)
+- **Head pose estimation** — detect nodding off even with eyes open
+- **Yawn detection** — mouth landmark tracking as a secondary drowsiness signal
+- **Session history** — log alert timestamps to a dashboard with graphs
+- **Configurable threshold** — let users set their own EAR threshold and alert delay
+- **Mobile PWA** — service worker + manifest for offline use and home screen install
+- **Redis sessions** — replace memorystore for multi-instance horizontal scaling
+- **WebRTC multi-device** — stream detection results to a second device (e.g., passenger phone)
 
 ---
 
-## License
+## 14. Interview Talking Points
 
-MIT — see [LICENSE](./LICENSE) for details.
+### Why run inference in the browser instead of a backend?
+Privacy is the primary reason. Sending a live webcam stream to a server is a significant trust and data risk. TensorFlow.js with the WebGL backend runs inference on the local GPU — no video ever leaves the device. It also eliminates server load entirely for the core feature.
 
----
+### Why TensorFlow.js and MediaPipe over Python/OpenCV?
+Python + OpenCV is the traditional approach, but it requires a local Python environment, model files, and backend infrastructure. TensorFlow.js runs the same model in any modern browser — zero installation for the user, works cross-platform, and the MediaPipe FaceMesh model is production-grade (Google uses it in Meet and Photos).
 
-*Built with React, TensorFlow.js, and MediaPipe FaceMesh.*
+### Biggest challenge
+Getting the alarm to fire exactly once per closure event. The `rAF` loop runs ~60 times per second, so without `hasAlertedRef`, the alarm would retrigger every frame once the threshold was exceeded. A ref flag (`hasAlertedRef`) that resets only when eyes reopen solves this cleanly without any debounce overhead.
+
+### Why `useRef` instead of `useState` for the timer?
+`useState` triggers a React re-render on every update. Inside a 60fps loop, that means 60 re-renders per second — a significant performance problem. `useRef` gives a mutable container that doesn't trigger re-renders, is always current inside the closure, and has zero overhead.
+
+### Why EAR threshold 0.21?
+The original Soukupová & Čech paper suggests 0.3 as a general blink-detection threshold, but 0.3 causes false positives from normal slow blinks. 0.21 is conservative enough to only trigger on deliberate or involuntary sustained closure.
+
+### Why 5 seconds as the alert threshold?
+A normal blink is 150–400ms. A microsleep (the precursor to fatigue accidents) starts at around 2–5 seconds. 5 seconds eliminates false alarms from natural blinking patterns while still catching genuine drowsiness early.
+
+### Trade-offs made
+- **Accuracy vs. speed**: `refineLandmarks: false` speeds up inference but loses iris-level precision. For EAR, the 6 eyelid points are sufficient — iris refinement adds no value.
+- **Simplicity vs. persistence**: In-memory session store instead of Redis. Faster to set up, but sessions are lost on server restart. Acceptable for a demo; Redis would be the production swap.
+- **Browser-only vs. native**: Running in the browser limits access to device sensors and background processing. A native app would be more reliable for continuous monitoring, but the browser approach has zero-friction access for users.
+
+### What you'd improve
+Add PERCLOS (percentage of eye closure over a rolling window) instead of a single binary threshold — it's more statistically robust and used in actual driver monitoring systems. Also add proper observability: structured logging, error tracking (Sentry), and a metrics dashboard to monitor alarm frequency across users.
