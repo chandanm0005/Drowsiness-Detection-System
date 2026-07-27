@@ -492,7 +492,7 @@ Set these in the Render dashboard under **Environment**:
 
 ---
 
-## 14. Interview Talking Points
+## 14. Talking Points
 
 ### Why run inference in the browser instead of a backend?
 Privacy is the primary reason. Sending a live webcam stream to a server is a significant trust and data risk. TensorFlow.js with the WebGL backend runs inference on the local GPU — no video ever leaves the device. It also eliminates server load entirely for the core feature.
