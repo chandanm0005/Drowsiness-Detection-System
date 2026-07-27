@@ -517,5 +517,4 @@ A normal blink is 150–400ms. A microsleep (the precursor to fatigue accidents)
 - **Simplicity vs. persistence**: In-memory session store instead of Redis. Faster to set up, but sessions are lost on server restart. Acceptable for a demo; Redis would be the production swap.
 - **Browser-only vs. native**: Running in the browser limits access to device sensors and background processing. A native app would be more reliable for continuous monitoring, but the browser approach has zero-friction access for users.
 
-### What you'd improve
-Add PERCLOS (percentage of eye closure over a rolling window) instead of a single binary threshold — it's more statistically robust and used in actual driver monitoring systems. Also add proper observability: structured logging, error tracking (Sentry), and a metrics dashboard to monitor alarm frequency across users.
+
